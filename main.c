@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
+#include <string.h>
 
 #include "aeronave.h"
 #include "setor.h"
@@ -137,10 +138,10 @@ void* rotina_aeronave(void* arg) {
     minha_nave.setor_atual = -1; // -1 indica que está no chão/fora do espaço aéreo */
 
     // Gerar rota aleatória
-    printf("[Aeronave %d] Prioridade: %d, Rota: ", minha_nave.id, minha_nave.prioridade);
-    for(int i = 0; i < minha_nave.tamanho_rota; i++) {
+    printf("[Aeronave %d] Prioridade: %d, Rota: ", minha_nave->id, minha_nave->prioridade);
+    for(int i = 0; i < minha_nave->tamanho_rota; i++) {
         minha_nave.rota[i] = gerar_numero(0, args->num_setores_total - 1);
-        printf("%d ", minha_nave.rota[i]);
+        printf("%d ", minha_nave->rota[i]);
     }
     printf("\n");
 
