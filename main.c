@@ -7,6 +7,7 @@
 
 #include "aeronave.h"
 #include "setor.h"
+#include "controle.h"
 
 // Variáveis globais (simplificadas para começar)
 int NUM_SETORES;
@@ -115,7 +116,7 @@ void* rotina_aeronave(void* arg) {
     ArgsAeronave* args = (ArgsAeronave*) arg;
     
     // 1. Criar a aeronave e seus atributos 
-    Aeronave* minha_nave = criar_aeronave(args->id, NUM_SETORES)
+    Aeronave* minha_nave = criar_aeronave(args->id, NUM_SETORES);
 
     char mensagem[200];
     sprintf(mensagem, "Aeronave %d iniciou: prio=%u, rota=[", 
@@ -129,13 +130,6 @@ void* rotina_aeronave(void* arg) {
     }
     strcat(mensagem, "]");
     print_log(mensagem);
-    
-    /*Aeronave minha_nave;
-    minha_nave.id = args->id;
-    minha_nave.prioridade = gerar_numero(1, 1000); // Prioridade aleatória 
-    minha_nave.tamanho_rota = gerar_numero(2, MAX_ROTA); // Rota de tamanho variável 
-    minha_nave.indice_rota_atual = 0;
-    minha_nave.setor_atual = -1; // -1 indica que está no chão/fora do espaço aéreo */
 
     // Gerar rota aleatória
     printf("[Aeronave %d] Prioridade: %d, Rota: ", minha_nave->id, minha_nave->prioridade);
@@ -243,7 +237,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Pequeno delay entre criação de threads para evitar sincronização perfeita
-        usleep(10000);
+        usleep(10000); // usleep pausa a execução por microsegundos
     }
 
     printf("Todas as %d aeronaves foram criadas e iniciaram suas rotas.\n\n", NUM_AERONAVES);
