@@ -17,7 +17,7 @@ typedef struct {
     int aeronave_atual;
 } Setor;
 
-typedef struct {
+typedef struct Aeronave {
     int id;
     unsigned int prioridade;
     int *rota;

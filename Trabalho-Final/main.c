@@ -1,4 +1,12 @@
-#include "atc.c"
+#include "atc.h"
+#include <stdio.h>
+
+// Variáveis globais (definidas em atc.c)
+extern Controlador controlador;
+extern Aeronave *aeronaves;
+extern int N;
+extern int executando;
+extern time_t inicio_simulacao;
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
@@ -36,7 +44,7 @@ int main(int argc, char *argv[]) {
     }
     
     // Finalizar
-    int executando = 0;
+    executando = 0;
     pthread_join(thread_controlador_id, NULL);
     finalizar_sistema();
     

@@ -15,7 +15,7 @@ void inicializar_sistema(int M, int N_aeronaves) {
     // Inicializar controlador
     controlador.M = M;
     controlador.setores = (Setor*)malloc(M * sizeof(Setor));
-    controlador.fila_espera = (Aeronave*)malloc(M * sizeof(Aeronave));
+    controlador.fila_espera = (Aeronave**)malloc(M * sizeof(Aeronave*));
     controlador.tamanho_fila = (int*)calloc(M, sizeof(int));
     
     pthread_mutex_init(&controlador.lock, NULL);
