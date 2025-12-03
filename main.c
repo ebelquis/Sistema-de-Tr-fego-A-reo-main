@@ -40,10 +40,9 @@ int gerar_numero(int min, int max) {
     return min + rand() % (max - min + 1);
 }
 
-// Função de solicitar setor
-int solicitar_setor(Aeronave* nave, int setor_destino) {
+int solicitar_setor(Controle* torre_controle, Aeronave* nave, int setor_destino) {
     char mensagem[100];
-    
+    //
     // Inicia contagem do tempo de espera
     struct timespec inicio;
     clock_gettime(CLOCK_MONOTONIC, &inicio);
@@ -62,6 +61,11 @@ int solicitar_setor(Aeronave* nave, int setor_destino) {
         sprintf(mensagem, "Aeronave %d (prio %u) AGUARDANDO setor %d (ocupado por aeronave %d)", 
                 nave->id, nave->prioridade, setor_destino, setor->aeronave_ocupante);
         print_log(mensagem);
+
+        // Adiciona esta aeronave como próxima na fila, se não estiver já
+        if (setor->proxima_aeronave == -1) {
+            setor->proxima_aeronave = nave->id;
+        }
         
         // Libera o mutex temporariamente para evitar deadlock
         pthread_mutex_unlock(&setor->mutex);
@@ -93,6 +97,23 @@ int solicitar_setor(Aeronave* nave, int setor_destino) {
     return 1;
 }
 
+// Função para liberar setor
+void liberar_setor(Controle* torre_controle, int setor_id, int aeronave_id) {
+    if (setor_id == -1) return;
+    
+    Setor* setor = &torre_controle->setores[setor_id];
+    pthread_mutex_lock(&setor->mutex);
+    
+    char mensagem[100];
+    sprintf(mensagem, "Setor %d liberado pela aeronave %d", setor_id, aeronave_id);
+    print_log(mensagem);
+    
+    setor->ocupado = 0;
+    setor->aeronave_ocupante = -1;
+    
+    pthread_mutex_unlock(&setor->mutex);
+}
+
 // A função que cada thread (aeronave) vai executar
 void* rotina_aeronave(void* arg) {
     ArgsAeronave* args = (ArgsAeronave*) arg;
@@ -113,27 +134,19 @@ void* rotina_aeronave(void* arg) {
     strcat(mensagem, "]");
     print_log(mensagem);
 
-    // Gerar rota aleatória
-    printf("[Aeronave %d] Prioridade: %d, Rota: ", minha_nave->id, minha_nave->prioridade);
-    for(int i = 0; i < minha_nave->tamanho_rota; i++) {
-        minha_nave->rota[i] = gerar_numero(0, args->num_setores_total - 1);
-        printf("%d ", minha_nave->rota[i]);
-    }
-    printf("\n");
-
     // 2. Ciclo de vida da aeronave 
 
     while (minha_nave->indice_rota < minha_nave->tamanho_rota) {
         int setor_destino = minha_nave->rota[minha_nave->indice_rota];
-        
-        // Solicita acesso ao setor
-        solicitar_setor(minha_nave, setor_destino);
 
         // Se não for o primeiro, libera o setor anterior
         if (minha_nave->setor_atual != -1) {
             liberar_setor(torre_controle, minha_nave->setor_atual, minha_nave->id);
         }
 
+        // Tenta solicitar o setor
+        solicitar_setor(torre_controle, minha_nave, setor_destino);
+        
         // Atualiza o setor atual
         minha_nave->setor_atual = setor_destino;
         minha_nave->indice_rota++;

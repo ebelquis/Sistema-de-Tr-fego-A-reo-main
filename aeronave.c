@@ -11,7 +11,7 @@ Aeronave* criar_aeronave(int id, int num_setores) {
     }
     
     aeronave->id = id;
-    aeronave->prioridade = rand() % 1000; // Prioridade aleatória entre 0 e 999
+    aeronave->prioridade = rand() % 10; // Prioridade aleatória entre 0 e 9
     aeronave->tamanho_rota = (rand() % (num_setores - 1)) + 1; // Tamanho da rota entre 1 e num_setores-1
     aeronave->setor_atual = -1; // Ainda não entrou em nenhum setor
     aeronave->indice_rota = 0;

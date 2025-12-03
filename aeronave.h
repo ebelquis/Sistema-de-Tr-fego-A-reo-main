@@ -1,8 +1,7 @@
 #ifndef AERONAVE_H
 #define AERONAVE_H
 
-#include <pthread.h>
-#include "setor.h"
+#include <time.h>
 
 #define MAX_ROTA 100 // Número máximo de setores na rota
 
