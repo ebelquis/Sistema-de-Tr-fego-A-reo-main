@@ -134,7 +134,7 @@ void* rotina_aeronave(void* arg) {
     // Gerar rota aleatória
     printf("[Aeronave %d] Prioridade: %d, Rota: ", minha_nave->id, minha_nave->prioridade);
     for(int i = 0; i < minha_nave->tamanho_rota; i++) {
-        minha_nave.rota[i] = gerar_numero(0, args->num_setores_total - 1);
+        minha_nave->rota[i] = gerar_numero(0, args->num_setores_total - 1);
         printf("%d ", minha_nave->rota[i]);
     }
     printf("\n");

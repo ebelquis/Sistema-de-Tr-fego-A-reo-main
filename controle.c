@@ -28,13 +28,6 @@ Controle* inicializar_controle(int num_setores_, int num_aeronaves_) {
         inicializar_setor(&ctrl->setores[i], i);
     }
     
-    // Inicializa aeronaves
-    ctrl->aeronaves = (Aeronave**)malloc(N * sizeof(Aeronave*));
-    srand(time(NULL));
-    for (int i = 0; i < N; i++) {
-        ctrl->aeronaves[i] = criar_aeronave(i, M);
-    }
-    
     pthread_mutex_init(&ctrl->mutex_global, NULL);
 
     printf("Torre de Controle inicializada com %d setores e %d aeronaves.\n", num_setores_, num_aeronaves_);
@@ -80,7 +73,7 @@ void imprimir_estado_controle(Controle* controle) {
     int total_aeronaves_em_setores = 0;
 
     printf("\n--- Estados dos Setores ---\n");
-    for (int i = 0, i < controle->num_setores, i++) {
+    for (int i = 0; i < controle->num_setores; i++) {
         Setor* setor = &controle->setores[i];
         
         // Tentar travar o mutex para ler o estado
