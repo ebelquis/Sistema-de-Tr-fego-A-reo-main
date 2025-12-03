@@ -1,7 +1,10 @@
-#include "controle.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <pthread.h>
+#include "setor.h"
+#include "aeronave.h"
+#include "controle.h"
 
 Controle* inicializar_controle(int num_setores_, int num_aeronaves_) {
     Controle *ctrl = (Controle*)malloc(sizeof(Controle));

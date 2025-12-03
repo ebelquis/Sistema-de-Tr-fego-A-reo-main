@@ -1,6 +1,8 @@
 #include "setor.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include "controle.h"
 
 // Função para inicializar um setor
 void inicializar_setor(Setor* setor, int id) {
@@ -36,9 +38,16 @@ int tentar_ocupar_setor(Setor* setor, int aeronave_id) {
     return 1; // Sucesso ao ocupar o setor
 }
 
-// Função para liberar um setor
-void liberar_setor(Setor* setor) {
+// Função para liberar setor
+void liberar_setor(Controle* torre_controle, int setor_id, int aeronave_id) {
+    if (setor_id == -1) return;
+    
+    Setor* setor = &torre_controle->setores[setor_id];
     pthread_mutex_lock(&setor->mutex);
+    
+    char mensagem[100];
+    sprintf(mensagem, "Setor %d liberado pela aeronave %d", setor_id, aeronave_id);
+    print_log(mensagem);
     
     setor->ocupado = 0;
     setor->aeronave_ocupante = -1;

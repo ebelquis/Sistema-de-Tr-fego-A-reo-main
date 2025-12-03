@@ -15,6 +15,6 @@ typedef struct {
 void inicializar_setor(Setor* setor, int id); // Inicializa um setor
 void destruir_setor(Setor* setor); // Libera recursos do setor
 int tentar_ocupar_setor(Setor* setor, int aeronave_id); // Tenta ocupar o setor
-void liberar_setor(Setor* setor); // Libera o setor
+void liberar_setor(Controle* torre_controle, int setor_id, int aeronave_id); // Libera/apaga o setor
 
 #endif

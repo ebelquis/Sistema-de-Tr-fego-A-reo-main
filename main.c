@@ -13,9 +13,17 @@
 int NUM_SETORES;
 int NUM_AERONAVES;
 Controle* torre_controle;
-
 // Mutexes
 pthread_mutex_t mutex_log = PTHREAD_MUTEX_INITIALIZER;
+
+// Função para obter timestamp atual
+void get_timestamp(char* buffer) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    struct tm* tm_info = localtime(&ts.tv_sec);
+    strftime(buffer, 20, "%H:%M:%S", tm_info);
+    sprintf(buffer + 8, ".%03ld", ts.tv_nsec / 1000000);
+}
 
 // Print log com timestamp
 void print_log(const char* mensagem) {
@@ -25,15 +33,6 @@ void print_log(const char* mensagem) {
     pthread_mutex_lock(&mutex_log);
     printf("[%s] %s\n", timestamp, mensagem);
     pthread_mutex_unlock(&mutex_log);
-}
-
-// Função para obter timestamp atual
-void get_timestamp(char* buffer) {
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    struct tm* tm_info = localtime(&ts.tv_sec);
-    strftime(buffer, 20, "%H:%M:%S", tm_info);
-    sprintf(buffer + 8, ".%03ld", ts.tv_nsec / 1000000);
 }
 
 // Função auxiliar para gerar um número aleatório entre min e max
@@ -94,23 +93,6 @@ int solicitar_setor(Aeronave* nave, int setor_destino) {
     return 1;
 }
 
-// Função para liberar setor
-void liberar_setor(int setor_id, int aeronave_id) {
-    if (setor_id == -1) return;
-    
-    Setor* setor = &torre_controle->setores[setor_id];
-    pthread_mutex_lock(&setor->mutex);
-    
-    char mensagem[100];
-    sprintf(mensagem, "Setor %d liberado pela aeronave %d", setor_id, aeronave_id);
-    print_log(mensagem);
-    
-    setor->ocupado = 0;
-    setor->aeronave_ocupante = -1;
-    
-    pthread_mutex_unlock(&setor->mutex);
-}
-
 // A função que cada thread (aeronave) vai executar
 void* rotina_aeronave(void* arg) {
     ArgsAeronave* args = (ArgsAeronave*) arg;
@@ -149,7 +131,7 @@ void* rotina_aeronave(void* arg) {
 
         // Se não for o primeiro, libera o setor anterior
         if (minha_nave->setor_atual != -1) {
-            liberar_setor(minha_nave->setor_atual, minha_nave->id);
+            liberar_setor(torre_controle, minha_nave->setor_atual, minha_nave->id);
         }
 
         // Atualiza o setor atual
@@ -167,7 +149,7 @@ void* rotina_aeronave(void* arg) {
 
     // Libera último setor ao final da rota
     if (minha_nave->setor_atual != -1) {
-        liberar_setor(minha_nave->setor_atual, minha_nave->id);
+        liberar_setor(torre_controle, minha_nave->setor_atual, minha_nave->id);
     }
     
     sprintf(mensagem, "Aeronave %d completou sua rota. Tempo total de espera: %.3fs", 
