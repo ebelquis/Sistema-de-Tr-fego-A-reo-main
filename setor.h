@@ -8,12 +8,13 @@ typedef struct {
     pthread_mutex_t mutex;
     int ocupado; // 0 = livre, 1 = ocupado
     int aeronave_ocupante; // ID da aeronave que está no setor
+    int proxima_aeronave; // ID da próxima aeronave na fila (prioridade)
 } Setor;
 
-// Inicializa todos os setores
-void inicializar_setores(Setor *setores, int M);
-
-// Libera recursos dos setores
-void destruir_setores(Setor *setores, int M);
+// Protótipos das funções
+void inicializar_setor(Setor* setor, int id); // Inicializa um setor
+void destruir_setor(Setor* setor); // Libera recursos do setor
+int tentar_ocupar_setor(Setor* setor, int aeronave_id); // Tenta ocupar o setor
+void liberar_setor(Setor* setor); // Libera o setor
 
 #endif

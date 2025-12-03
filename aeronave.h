@@ -7,12 +7,14 @@
 #define MAX_ROTA 100 // Número máximo de setores na rota
 
 typedef struct {
-    int id; // Identificador da aeronave
-    unsigned int prioridade; // de 0 (baixa) a 1000 (alta)
-    int tamanho_rota; // Número de setores na rota
-    int rota[MAX_ROTA]; // Rota da aeronave (array dos IDs dos Setores)
-    int setor_atual; // ID do setor atual na rota
-    int indice_rota_atual; // indice atual na rota
+    int id;
+    unsigned int prioridade;
+    int rota[MAX_ROTA];
+    int tamanho_rota;
+    int setor_atual;
+    int indice_rota;
+    double tempo_total_espera;
+    struct timespec inicio_espera;
 } Aeronave;
 
 // Estrutura para passar argumentos para a thread da aeronave
@@ -21,11 +23,9 @@ typedef struct {
     int num_setores_total;
 } ArgsAeronave;
 
-// Inicializa todas as aeronaves
-void* rotina_aeronave(void* arg);
-void inicializar_aeronaves(Aeronave *aeronaves, int N);
-
-// Libera recursos das aeronaves
-void destruir_aeronaves(Aeronave *aeronaves, int N);
+// Protótipos das funções
+Aeronave* criar_aeronave(int id, int num_setores); // Cria uma aeronave
+void destruir_aeronave(Aeronave* aeronave); // Libera memória da aeronave
+void imprimir_aeronave(Aeronave* aeronave); // Imprime detalhes da aeronave
 
 #endif
