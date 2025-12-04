@@ -1,4 +1,5 @@
 #include "atc.h"
+#include <errno.h> // Para ETIMEDOUT
 
 // Variáveis globais
 Controlador controlador;
@@ -6,6 +7,10 @@ Aeronave *aeronaves;
 int N;
 int executando = 1;
 time_t inicio_simulacao;
+
+// Protótipos auxiliares locais
+void liberar_setor_por_id(int id_setor);
+void remover_da_fila(int setor_id, int aeronave_id);
 
 // Inicialização do sistema
 void inicializar_sistema(int M, int N_aeronaves) {
@@ -84,25 +89,27 @@ void *thread_controlador(void *arg) {
                 }
                 
                 // Remover da fila
-                if (melhor_anterior == NULL) {
-                    controlador.fila_espera[i] = melhor->prox;
-                } else {
-                    melhor_anterior->prox = melhor->prox;
+                if (melhor != NULL) {
+                    if (melhor_anterior == NULL) {
+                        controlador.fila_espera[i] = melhor->prox;
+                    } else {
+                        melhor_anterior->prox = melhor->prox;
+                    }
+                    controlador.tamanho_fila[i]--;
+                    
+                    // Conceder acesso
+                    controlador.setores[i].ocupado = 1;
+                    controlador.setores[i].aeronave_atual = melhor->id;
+                    melhor->setor_atual = i;
+                    
+                    time_t agora = time(NULL);
+                    melhor->tempo_espera_total += difftime(agora, melhor->tempo_inicio);
+                    
+                    // Acordar aeronave
+                    pthread_cond_signal(&melhor->cond);
+                    
+                    imprimir_estado(melhor, "CONCEDIDO acesso (via fila)");
                 }
-                controlador.tamanho_fila[i]--;
-                
-                // Conceder acesso
-                controlador.setores[i].ocupado = 1;
-                controlador.setores[i].aeronave_atual = melhor->id;
-                melhor->setor_atual = i;
-                
-                time_t agora = time(NULL);
-                melhor->tempo_espera_total += difftime(agora, melhor->tempo_inicio);
-                
-                // Acordar aeronave
-                pthread_cond_signal(&melhor->cond);
-                
-                imprimir_estado(melhor, "CONCEDIDO acesso ao setor");
             }
         }
         
@@ -112,22 +119,44 @@ void *thread_controlador(void *arg) {
     return NULL;
 }
 
-// Solicitar acesso a um setor
-void solicitar_acesso(Aeronave *av) {
+// Função auxiliar para remover aeronave da fila em caso de timeout
+void remover_da_fila(int setor_id, int aeronave_id) {
+    Aeronave *atual = controlador.fila_espera[setor_id];
+    Aeronave *anterior = NULL;
+
+    while (atual != NULL) {
+        if (atual->id == aeronave_id) {
+            if (anterior == NULL) {
+                controlador.fila_espera[setor_id] = atual->prox;
+            } else {
+                anterior->prox = atual->prox;
+            }
+            controlador.tamanho_fila[setor_id]--;
+            return;
+        }
+        anterior = atual;
+        atual = atual->prox;
+    }
+}
+
+// Solicitar acesso a um setor (retorna 1 se sucesso, 0 se timeout)
+int solicitar_acesso(Aeronave *av) {
     int setor_destino = av->setor_destino;
+    int sucesso = 1; // Assumimos sucesso inicialmente
     
     pthread_mutex_lock(&controlador.lock);
     
     if (!controlador.setores[setor_destino].ocupado) {
-        // Setor livre - conceder imediatamente
+        // CASO 1: Setor livre - conceder imediatamente
         controlador.setores[setor_destino].ocupado = 1;
         controlador.setores[setor_destino].aeronave_atual = av->id;
         av->setor_atual = setor_destino;
         
         imprimir_estado(av, "CONCEDIDO acesso imediato");
         pthread_mutex_unlock(&controlador.lock);
+        return 1;
     } else {
-        // Setor ocupado - entrar na fila de espera
+        // CASO 2: Setor ocupado - entrar na fila com TIMEOUT
         av->tempo_inicio = time(NULL);
         
         // Inserir na fila mantendo prioridade
@@ -137,15 +166,12 @@ void solicitar_acesso(Aeronave *av) {
         if (controlador.fila_espera[setor_destino] == NULL) {
             controlador.fila_espera[setor_destino] = novo;
         } else {
-            // Inserir ordenado por prioridade (decrescente)
             Aeronave *atual = controlador.fila_espera[setor_destino];
             Aeronave *anterior = NULL;
-            
             while (atual != NULL && atual->prioridade > novo->prioridade) {
                 anterior = atual;
                 atual = atual->prox;
             }
-            
             if (anterior == NULL) {
                 novo->prox = controlador.fila_espera[setor_destino];
                 controlador.fila_espera[setor_destino] = novo;
@@ -158,61 +184,103 @@ void solicitar_acesso(Aeronave *av) {
         controlador.tamanho_fila[setor_destino]++;
         imprimir_estado(av, "AGUARDANDO na fila");
         
-        // Esperar até ser atendido
+        // --- CORREÇÃO IMPORTANTE ---
+        // Configurar Timeout para 3 SEGUNDOS (maior que o tempo de voo)
+        // Isso permite esperar numa fila normal sem desistir imediatamente
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 3; // +3 segundos de tolerância
+
+        // Esperar com timeout
         while (controlador.setores[setor_destino].aeronave_atual != av->id) {
-            pthread_cond_wait(&av->cond, &controlador.lock);
+            int err = pthread_cond_timedwait(&av->cond, &controlador.lock, &ts);
+            if (err == ETIMEDOUT) {
+                if (controlador.setores[setor_destino].aeronave_atual != av->id) {
+                    remover_da_fila(setor_destino, av->id);
+                    sucesso = 0; // Falha (timeout real de deadlock ou fila muito longa)
+                    break;
+                }
+            }
         }
         
         pthread_mutex_unlock(&controlador.lock);
+        return sucesso;
     }
 }
 
-// Liberar setor atual
-void liberar_setor(int id_setor) {
+// Função auxiliar para liberar setor pelo ID
+void liberar_setor_por_id(int id_setor) {
     if (id_setor < 0) return;
 
-    // proteger controlador
     pthread_mutex_lock(&controlador.lock);
-    
     controlador.setores[id_setor].ocupado = 0;
     controlador.setores[id_setor].aeronave_atual = -1;
-    
-    // Sinalizar para o controlador verificar a fila
-    pthread_cond_signal(&controlador.cond);
+    pthread_cond_signal(&controlador.cond); // Avisa controlador
     pthread_mutex_unlock(&controlador.lock);
-    
+}
+
+// Wrapper para compatibilidade
+void liberar_setor(Aeronave *av) {
+    liberar_setor_por_id(av->setor_atual);
+    av->setor_atual = -1;
 }
 
 // Thread de uma aeronave
 void *thread_aeronave(void *arg) {
     Aeronave *av = (Aeronave*)arg;
     
-    for (int i = 0; i < av->rota_tam; i++) {
-        // Armazena o setor que será o anterior
-        int setor_anterior = av->setor_atual;
-
+    int i = 0;
+    while (i < av->rota_tam) {
+        int setor_anterior = av->setor_atual; 
         av->setor_destino = av->rota[i];
         
-        // 1. Solicitar acesso ao próximo setor
         imprimir_estado(av, "SOLICITANDO acesso");
-        solicitar_acesso(av);
         
-        if (setor_anterior != -1) {
-            char msg[50];
-            sprintf(msg, "LIBEROU setor %d", setor_anterior);
-            imprimir_estado(av, msg);
-            liberar_setor(setor_anterior);
+        // Tenta solicitar (agora com tolerância de 3s)
+        int resultado = solicitar_acesso(av);
+        
+        if (resultado == 0) {
+            // Se falhou (passaram 3s e nada), tenta mais uma vez
+            imprimir_estado(av, "Trânsito intenso. Aguardando...");
+            sleep(1); 
+            
+            imprimir_estado(av, "Tentando acesso novamente...");
+            resultado = solicitar_acesso(av);
         }
-        
-        // 3. Simular voo no setor (1-3 segundos)
-        int tempo_voo = (rand() % 3) + 1;
-        sleep(tempo_voo);
-        
-        // 4. Se é o último setor, liberar antes de sair
-        if (i == av->rota_tam - 1) {
-            imprimir_estado(av, "SAINDO do espaço aéreo");
-            liberar_setor(av->setor_atual);
-            av->setor_atual = -1; // Agora sim, estamos fora
+
+        if (resultado == 1) {
+            // SUCESSO!
+            if (setor_anterior != -1) {
+                char msg[50];
+                sprintf(msg, "LIBEROU setor %d", setor_anterior);
+                imprimir_estado(av, msg);
+                liberar_setor_por_id(setor_anterior);
+            }
+            
+            int tempo_voo = (rand() % 3) + 1;
+            sleep(tempo_voo);
+            
+            if (i == av->rota_tam - 1) {
+                imprimir_estado(av, "SAINDO do espaço aéreo");
+                liberar_setor_por_id(av->setor_atual);
+                av->setor_atual = -1;
+            }
+            i++; 
+            
+        } else {
+            // TIMEOUT DUPLO (Total > 6s de espera) -> DEADLOCK PROVÁVEL
+            imprimir_estado(av, "DEADLOCK DETECTADO: Liberando recursos...");
+            
+            if (av->setor_atual != -1) {
+                liberar_setor_por_id(av->setor_atual);
+                av->setor_atual = -1;
+            }
+            
+            // Backoff aleatório para dessincronizar
+            usleep(100000 + (rand() % 200000)); 
+            
+            // Rollback: volta um passo na rota
+            if (i > 0) i--; 
         }
     }
     
@@ -232,22 +300,18 @@ void imprimir_estado(Aeronave *av, const char *acao) {
 // Finalizar sistema e calcular estatísticas
 void finalizar_sistema() {
     executando = 0;
-    sleep(2); // Aguardar threads terminarem
+    sleep(1); 
     
     printf("\n========== ESTATÍSTICAS FINAIS ==========\n");
     printf("Tempo total de simulação: %.0f segundos\n", 
            difftime(time(NULL), inicio_simulacao));
     
     printf("\nTempos médios de espera por aeronave:\n");
+    double soma = 0;
     for (int i = 0; i < N; i++) {
         printf("Aeronave %03d (Pri: %04d): %.2f segundos\n",
                aeronaves[i].id, aeronaves[i].prioridade,
                aeronaves[i].tempo_espera_total);
-    }
-    
-    // Calcular média geral
-    double soma = 0;
-    for (int i = 0; i < N; i++) {
         soma += aeronaves[i].tempo_espera_total;
     }
     printf("\nTempo médio de espera geral: %.2f segundos\n", soma / N);
