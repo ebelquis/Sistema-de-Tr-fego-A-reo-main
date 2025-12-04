@@ -24,7 +24,7 @@ typedef struct Aeronave {
     int rota_tam;
     int setor_atual;
     int setor_destino;
-    time_t tempo_inicio;
+    struct timespec tempo_inicio;
     double tempo_espera_total;
     pthread_t thread;
     pthread_cond_t cond;

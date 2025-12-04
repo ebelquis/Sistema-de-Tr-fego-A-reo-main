@@ -6,16 +6,23 @@ Controlador controlador;
 Aeronave *aeronaves;
 int N;
 int executando = 1;
-time_t inicio_simulacao;
+struct timespec inicio_simulacao;
 
 // Protótipos auxiliares locais
 void liberar_setor_por_id(int id_setor);
 void remover_da_fila(int setor_id, int aeronave_id);
 
+// Calcula a diferença de tempo em nanosegundos
+double get_tempo_decorrido(struct timespec inicio) {
+    struct timespec agora;
+    clock_gettime(CLOCK_REALTIME, &agora);
+    return (agora.tv_sec - inicio.tv_sec) + (agora.tv_nsec - inicio.tv_nsec) / 1e9;
+}
+
 // Inicialização do sistema
 void inicializar_sistema(int M, int N_aeronaves) {
     N = N_aeronaves;
-    inicio_simulacao = time(NULL);
+    clock_gettime(CLOCK_REALTIME, &inicio_simulacao);
     
     // Inicializar controlador
     controlador.M = M;
@@ -104,8 +111,7 @@ void *thread_controlador(void *arg) {
                     controlador.setores[i].aeronave_atual = melhor->id;
                     melhor->setor_atual = i;
                     
-                    time_t agora = time(NULL);
-                    melhor->tempo_espera_total += difftime(agora, melhor->tempo_inicio);
+                    melhor->tempo_espera_total += get_tempo_decorrido(melhor->tempo_inicio);
                     
                     // Acordar aeronave
                     pthread_cond_signal(&melhor->cond);
@@ -162,7 +168,7 @@ int solicitar_acesso(Aeronave *av) {
         return 1;
     } else {
         // CASO 2: Setor ocupado OU com fila - entrar na fila com TIMEOUT
-        av->tempo_inicio = time(NULL);
+        clock_gettime(CLOCK_REALTIME, &av->tempo_inicio);
         
         // Inserir na fila mantendo prioridade (Insertion Sort na lista ligada)
         Aeronave *novo = av;
@@ -295,11 +301,9 @@ void *thread_aeronave(void *arg) {
 }
 
 void imprimir_estado(Aeronave *av, const char *acao) {
-    time_t agora = time(NULL);
-    double tempo_simulacao = difftime(agora, inicio_simulacao);
-    
-    printf("[T+%.0fs] Aeronave %03d (Pri: %04d) | Setor Atual: %02d | Destino: %02d | %s\n",
-           tempo_simulacao, av->id, av->prioridade, 
+    double tempo = get_tempo_decorrido(inicio_simulacao);
+    printf("[%06.3fs] Aeronave %03d (Pri: %04d) | Setor Atual: %02d | Destino: %02d | %s\n",
+           tempo, av->id, av->prioridade, 
            av->setor_atual, av->setor_destino, acao);
 }
 
@@ -308,19 +312,20 @@ void finalizar_sistema() {
     sleep(1); 
     
     printf("\n========== ESTATÍSTICAS FINAIS ==========\n");
-    printf("Tempo total de simulação: %.0f segundos\n", 
-           difftime(time(NULL), inicio_simulacao));
+    printf("Tempo total de simulação: %.3f segundos\n", 
+           get_tempo_decorrido(inicio_simulacao));
     
     printf("\nTempos médios de espera por aeronave:\n");
     double soma = 0;
     for (int i = 0; i < N; i++) {
-        printf("Aeronave %03d (Pri: %04d): %.2f segundos\n",
+        printf("Aeronave %03d (Pri: %04d): %.3f segundos\n",
                aeronaves[i].id, aeronaves[i].prioridade,
                aeronaves[i].tempo_espera_total);
         soma += aeronaves[i].tempo_espera_total;
     }
-    printf("\nTempo médio de espera geral: %.2f segundos\n", soma / N);
     
+    printf("\nTempo médio de espera geral: %.3f segundos\n", soma / N);
+
     // Liberar memória
     for (int i = 0; i < N; i++) {
         free(aeronaves[i].rota);

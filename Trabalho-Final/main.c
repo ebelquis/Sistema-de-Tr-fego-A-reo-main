@@ -6,7 +6,7 @@ extern Controlador controlador;
 extern Aeronave *aeronaves;
 extern int N;
 extern int executando;
-extern time_t inicio_simulacao;
+extern struct timespec inicio_simulacao;
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
