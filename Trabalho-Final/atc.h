@@ -45,7 +45,7 @@ void inicializar_sistema(int M, int N);
 void *thread_aeronave(void *arg);
 void *thread_controlador(void *arg);
 void solicitar_acesso(Aeronave *av);
-void liberar_setor(Aeronave *av);
+void liberar_setor(int id_setor);
 void finalizar_sistema();
 void imprimir_estado(Aeronave *av, const char *acao);
 

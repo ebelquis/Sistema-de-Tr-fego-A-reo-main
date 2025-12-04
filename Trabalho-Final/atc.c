@@ -171,22 +171,19 @@ void solicitar_acesso(Aeronave *av) {
 }
 
 // Liberar setor atual
-void liberar_setor(Aeronave *av) {
-    if (av->setor_atual >= 0) {
-        pthread_mutex_lock(&controlador.lock);
-        
-        int setor_atual = av->setor_atual;
-        controlador.setores[setor_atual].ocupado = 0;
-        controlador.setores[setor_atual].aeronave_atual = -1;
-        
-        imprimir_estado(av, "LIBEROU setor");
-        
-        // Sinalizar para o controlador verificar a fila
-        pthread_cond_signal(&controlador.cond);
-        pthread_mutex_unlock(&controlador.lock);
-        
-        av->setor_atual = -1;
-    }
+void liberar_setor(int id_setor) {
+    if (id_setor < 0) return;
+
+    // proteger controlador
+    pthread_mutex_lock(&controlador.lock);
+    
+    controlador.setores[id_setor].ocupado = 0;
+    controlador.setores[id_setor].aeronave_atual = -1;
+    
+    // Sinalizar para o controlador verificar a fila
+    pthread_cond_signal(&controlador.cond);
+    pthread_mutex_unlock(&controlador.lock);
+    
 }
 
 // Thread de uma aeronave
@@ -194,15 +191,20 @@ void *thread_aeronave(void *arg) {
     Aeronave *av = (Aeronave*)arg;
     
     for (int i = 0; i < av->rota_tam; i++) {
+        // Armazena o setor que será o anterior
+        int setor_anterior = av->setor_atual;
+
         av->setor_destino = av->rota[i];
         
         // 1. Solicitar acesso ao próximo setor
         imprimir_estado(av, "SOLICITANDO acesso");
         solicitar_acesso(av);
         
-        // 2. Se não é o primeiro setor, liberar o anterior
-        if (i > 0) {
-            liberar_setor(av);
+        if (setor_anterior != -1) {
+            char msg[50];
+            sprintf(msg, "LIBEROU setor %d", setor_anterior);
+            imprimir_estado(av, msg);
+            liberar_setor(setor_anterior);
         }
         
         // 3. Simular voo no setor (1-3 segundos)
@@ -211,7 +213,9 @@ void *thread_aeronave(void *arg) {
         
         // 4. Se é o último setor, liberar antes de sair
         if (i == av->rota_tam - 1) {
-            liberar_setor(av);
+            imprimir_estado(av, "SAINDO do espaço aéreo");
+            liberar_setor(av->setor_atual);
+            av->setor_atual = -1; // Agora sim, estamos fora
         }
     }
     
