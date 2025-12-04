@@ -148,7 +148,6 @@ int solicitar_acesso(Aeronave *av) {
     
     pthread_mutex_lock(&controlador.lock);
     
-    // --- CORREÇÃO 1: ANTI-FURAR-FILA ---
     // Só entra direto se estiver Livre E a fila estiver VAZIA.
     // Se a fila não estiver vazia, eu sou obrigado a entrar na fila para respeitar a prioridade dos que já esperam.
     if (!controlador.setores[setor_destino].ocupado && controlador.fila_espera[setor_destino] == NULL) {
@@ -179,7 +178,7 @@ int solicitar_acesso(Aeronave *av) {
                 anterior = atual;
                 atual = atual->prox;
             }
-            if (anterior == NULL) { // Inserir no início (sou a maior prioridade)
+            if (anterior == NULL) { // Inserir no início (caso de maior prioridade)
                 novo->prox = controlador.fila_espera[setor_destino];
                 controlador.fila_espera[setor_destino] = novo;
             } else { // Inserir no meio ou fim
@@ -243,14 +242,12 @@ void *thread_aeronave(void *arg) {
         int resultado = solicitar_acesso(av);
         
         if (resultado == 0) {
-            // --- CORREÇÃO 2: RETRY DINÂMICO ---
+            
             // Se falhou, o tempo de espera depende da prioridade.
             // Prioridade alta (1000) espera pouco. Prioridade baixa (1) espera mais.
             // Fórmula: Base (100ms) + Penalidade
             
             int sleep_ms = 100 + (1000 - av->prioridade); 
-            // Ex: Prio 1000 -> dorme 100ms
-            // Ex: Prio 1    -> dorme 1099ms (~1.1s)
             
             imprimir_estado(av, "Aguardando (Prioridade)...");
             usleep(sleep_ms * 1000); 
