@@ -124,9 +124,6 @@ void solicitar_acesso(Aeronave *av) {
         controlador.setores[setor_destino].aeronave_atual = av->id;
         av->setor_atual = setor_destino;
         
-        time_t agora = time(NULL);
-        av->tempo_espera_total += difftime(agora, av->tempo_inicio);
-        
         imprimir_estado(av, "CONCEDIDO acesso imediato");
         pthread_mutex_unlock(&controlador.lock);
     } else {
