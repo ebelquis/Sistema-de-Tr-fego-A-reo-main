@@ -72,6 +72,7 @@ void *thread_controlador(void *arg) {
         
         // Verificar cada setor
         for (int i = 0; i < controlador.M; i++) {
+            // Se o setor não está ocupado E existe alguém na fila
             if (!controlador.setores[i].ocupado && controlador.fila_espera[i] != NULL) {
                 // Encontrar aeronave de maior prioridade na fila
                 Aeronave *melhor = NULL;
@@ -79,6 +80,7 @@ void *thread_controlador(void *arg) {
                 Aeronave *anterior = NULL;
                 Aeronave *melhor_anterior = NULL;
                 
+                // Varre a lista para garantir que pega o maior (caso a inserção tenha falhado na ordem, mas inserção ordenada já ajuda)
                 while (atual != NULL) {
                     if (melhor == NULL || atual->prioridade > melhor->prioridade) {
                         melhor = atual;
@@ -114,7 +116,7 @@ void *thread_controlador(void *arg) {
         }
         
         pthread_mutex_unlock(&controlador.lock);
-        usleep(100000); // 100ms
+        usleep(50000); // 50ms (reduzido para reagir mais rápido)
     }
     return NULL;
 }
@@ -146,8 +148,12 @@ int solicitar_acesso(Aeronave *av) {
     
     pthread_mutex_lock(&controlador.lock);
     
-    if (!controlador.setores[setor_destino].ocupado) {
-        // CASO 1: Setor livre - conceder imediatamente
+    // --- CORREÇÃO 1: ANTI-FURAR-FILA ---
+    // Só entra direto se estiver Livre E a fila estiver VAZIA.
+    // Se a fila não estiver vazia, eu sou obrigado a entrar na fila para respeitar a prioridade dos que já esperam.
+    if (!controlador.setores[setor_destino].ocupado && controlador.fila_espera[setor_destino] == NULL) {
+        
+        // CASO 1: Setor livre e sem fila - conceder imediatamente
         controlador.setores[setor_destino].ocupado = 1;
         controlador.setores[setor_destino].aeronave_atual = av->id;
         av->setor_atual = setor_destino;
@@ -156,10 +162,10 @@ int solicitar_acesso(Aeronave *av) {
         pthread_mutex_unlock(&controlador.lock);
         return 1;
     } else {
-        // CASO 2: Setor ocupado - entrar na fila com TIMEOUT
+        // CASO 2: Setor ocupado OU com fila - entrar na fila com TIMEOUT
         av->tempo_inicio = time(NULL);
         
-        // Inserir na fila mantendo prioridade
+        // Inserir na fila mantendo prioridade (Insertion Sort na lista ligada)
         Aeronave *novo = av;
         novo->prox = NULL;
         
@@ -168,14 +174,15 @@ int solicitar_acesso(Aeronave *av) {
         } else {
             Aeronave *atual = controlador.fila_espera[setor_destino];
             Aeronave *anterior = NULL;
-            while (atual != NULL && atual->prioridade > novo->prioridade) {
+            // Procura lugar: enquanto a prioridade do atual for maior, avança.
+            while (atual != NULL && atual->prioridade >= novo->prioridade) {
                 anterior = atual;
                 atual = atual->prox;
             }
-            if (anterior == NULL) {
+            if (anterior == NULL) { // Inserir no início (sou a maior prioridade)
                 novo->prox = controlador.fila_espera[setor_destino];
                 controlador.fila_espera[setor_destino] = novo;
-            } else {
+            } else { // Inserir no meio ou fim
                 anterior->prox = novo;
                 novo->prox = atual;
             }
@@ -184,12 +191,10 @@ int solicitar_acesso(Aeronave *av) {
         controlador.tamanho_fila[setor_destino]++;
         imprimir_estado(av, "AGUARDANDO na fila");
         
-        // --- CORREÇÃO IMPORTANTE ---
-        // Configurar Timeout para 3 SEGUNDOS (maior que o tempo de voo)
-        // Isso permite esperar numa fila normal sem desistir imediatamente
+        // Timeout de 3 segundos
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += 3; // +3 segundos de tolerância
+        ts.tv_sec += 3; 
 
         // Esperar com timeout
         while (controlador.setores[setor_destino].aeronave_atual != av->id) {
@@ -197,7 +202,7 @@ int solicitar_acesso(Aeronave *av) {
             if (err == ETIMEDOUT) {
                 if (controlador.setores[setor_destino].aeronave_atual != av->id) {
                     remover_da_fila(setor_destino, av->id);
-                    sucesso = 0; // Falha (timeout real de deadlock ou fila muito longa)
+                    sucesso = 0; // Falha
                     break;
                 }
             }
@@ -208,18 +213,17 @@ int solicitar_acesso(Aeronave *av) {
     }
 }
 
-// Função auxiliar para liberar setor pelo ID
 void liberar_setor_por_id(int id_setor) {
     if (id_setor < 0) return;
 
     pthread_mutex_lock(&controlador.lock);
     controlador.setores[id_setor].ocupado = 0;
     controlador.setores[id_setor].aeronave_atual = -1;
-    pthread_cond_signal(&controlador.cond); // Avisa controlador
+    // Avisa o controlador que algo mudou
+    pthread_cond_signal(&controlador.cond); 
     pthread_mutex_unlock(&controlador.lock);
 }
 
-// Wrapper para compatibilidade
 void liberar_setor(Aeronave *av) {
     liberar_setor_por_id(av->setor_atual);
     av->setor_atual = -1;
@@ -236,20 +240,27 @@ void *thread_aeronave(void *arg) {
         
         imprimir_estado(av, "SOLICITANDO acesso");
         
-        // Tenta solicitar (agora com tolerância de 3s)
         int resultado = solicitar_acesso(av);
         
         if (resultado == 0) {
-            // Se falhou (passaram 3s e nada), tenta mais uma vez
-            imprimir_estado(av, "Trânsito intenso. Aguardando...");
-            sleep(1); 
+            // --- CORREÇÃO 2: RETRY DINÂMICO ---
+            // Se falhou, o tempo de espera depende da prioridade.
+            // Prioridade alta (1000) espera pouco. Prioridade baixa (1) espera mais.
+            // Fórmula: Base (100ms) + Penalidade
+            
+            int sleep_ms = 100 + (1000 - av->prioridade); 
+            // Ex: Prio 1000 -> dorme 100ms
+            // Ex: Prio 1    -> dorme 1099ms (~1.1s)
+            
+            imprimir_estado(av, "Aguardando (Prioridade)...");
+            usleep(sleep_ms * 1000); 
             
             imprimir_estado(av, "Tentando acesso novamente...");
             resultado = solicitar_acesso(av);
         }
 
         if (resultado == 1) {
-            // SUCESSO!
+            // SUCESSO
             if (setor_anterior != -1) {
                 char msg[50];
                 sprintf(msg, "LIBEROU setor %d", setor_anterior);
@@ -268,7 +279,7 @@ void *thread_aeronave(void *arg) {
             i++; 
             
         } else {
-            // TIMEOUT DUPLO (Total > 6s de espera) -> DEADLOCK PROVÁVEL
+            // DEADLOCK / TIMEOUT DUPLO
             imprimir_estado(av, "DEADLOCK DETECTADO: Liberando recursos...");
             
             if (av->setor_atual != -1) {
@@ -276,10 +287,9 @@ void *thread_aeronave(void *arg) {
                 av->setor_atual = -1;
             }
             
-            // Backoff aleatório para dessincronizar
-            usleep(100000 + (rand() % 200000)); 
+            // Backoff aleatório maior para resolver o conflito
+            usleep(200000 + (rand() % 300000)); 
             
-            // Rollback: volta um passo na rota
             if (i > 0) i--; 
         }
     }
@@ -287,7 +297,6 @@ void *thread_aeronave(void *arg) {
     return NULL;
 }
 
-// Imprimir estado atual
 void imprimir_estado(Aeronave *av, const char *acao) {
     time_t agora = time(NULL);
     double tempo_simulacao = difftime(agora, inicio_simulacao);
@@ -297,7 +306,6 @@ void imprimir_estado(Aeronave *av, const char *acao) {
            av->setor_atual, av->setor_destino, acao);
 }
 
-// Finalizar sistema e calcular estatísticas
 void finalizar_sistema() {
     executando = 0;
     sleep(1); 
